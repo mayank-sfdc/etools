@@ -243,6 +243,7 @@ class TestTPMActionPointViewSet(TPMTestCaseMixin, BaseTenantTestCase):
                 'due_date': fuzzy.FuzzyDate(timezone.now().date(), _FUZZY_END_DATE).fuzz(),
                 'assigned_to': self.unicef_user.id,
                 'office': self.pme_user.profile.office.id,
+                'section': activity.section_id
             }
         )
 
@@ -262,7 +263,7 @@ class TestTPMActionPointViewSet(TPMTestCaseMixin, BaseTenantTestCase):
         if editable:
             self.assertIn('PUT', response.data['actions'].keys())
             self.assertCountEqual(
-                ['assigned_to', 'high_priority', 'due_date', 'description', 'office', 'tpm_activity'],
+                ['assigned_to', 'high_priority', 'due_date', 'description', 'office', 'tpm_activity', 'section'],
                 response.data['actions']['PUT'].keys()
             )
         else:

@@ -45,7 +45,7 @@ class TPMVisitReportRejectCommentSerializer(WritableNestedSerializerMixin,
 class TPMActionPointSerializer(PermissionsBasedSerializerMixin, ActionPointBaseSerializer):
     section = SeparatedReadWriteField(
         read_field=SectorSerializer(read_only=True, label=_('Section')),
-        read_only=True
+        required=True
     )
     office = SeparatedReadWriteField(
         read_field=OfficeSerializer(read_only=True, label=_('Office')),
@@ -78,7 +78,6 @@ class TPMActionPointSerializer(PermissionsBasedSerializerMixin, ActionPointBaseS
             'partner_id': activity.partner_id,
             'intervention_id': activity.intervention_id,
             'cp_output_id': activity.cp_output_id,
-            'section': activity.section,
         })
         return super(TPMActionPointSerializer, self).create(validated_data)
 
