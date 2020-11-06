@@ -38,6 +38,7 @@ class ProfileFactory(factory.django.DjangoModelFactory):
     country = factory.SubFactory(CountryFactory)
     job_title = 'Chief Tester'
     phone_number = '0123456789'
+    partner_staff_member = None
     # We pass in profile=None to prevent UserFactory from creating another profile
     # (this disables the RelatedFactory)
     user = factory.SubFactory('etools.applications.users.tests.factories.UserFactory', profile=None)

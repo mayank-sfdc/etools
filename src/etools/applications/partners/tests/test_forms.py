@@ -1,14 +1,9 @@
-from unittest.mock import patch
-
-from django.db import connection
-from django.test import override_settings
 
 from etools.applications.core.tests.cases import BaseTenantTestCase
 from etools.applications.partners import forms
-from etools.applications.partners.models import Intervention, PartnerOrganization, PartnerStaffMember, PartnerType
-from etools.applications.partners.tests.factories import InterventionFactory, PartnerFactory, PartnerStaffFactory
-from etools.applications.publics.models import Country
-from etools.applications.users.tests.factories import UserFactory
+from etools.applications.partners.models import PartnerOrganization, PartnerType
+from etools.applications.partners.tests.factories import PartnerFactory, PartnerStaffFactory
+from etools.applications.users.tests.factories import ProfileFactory, UserFactory
 
 
 class TestPartnersAdminForm(BaseTenantTestCase):
@@ -76,30 +71,24 @@ class TestPartnerStaffMemberForm(BaseTenantTestCase):
 
     def test_clean_duplicate_email(self):
         """Duplicate email not allowed if user associated as staff member"""
-        staff = PartnerStaffFactory()
-        self.data["email"] = staff.user.email
+        profile = ProfileFactory(
+            partner_staff_member=10,
+        )
+        self.data["email"] = profile.user.email
         form = forms.PartnerStaffMemberForm(self.data)
         self.assertFalse(form.is_valid())
         self.assertIn(
             "This user already exists under a different partnership: {}".format(
-                staff.user.email
+                profile.user.email
             ),
             form.errors["__all__"]
         )
 
-    def test_clean_user_exists(self):
-        """Duplicate emails are ok, if user not unicef and not staff member already"""
+    def test_clean_duplicate_email_no_profile(self):
+        """Duplicate emails are ok, if user not staff member already"""
         UserFactory(email="test@example.com")
         form = forms.PartnerStaffMemberForm(self.data)
         self.assertTrue(form.is_valid())
-
-    @override_settings(UNICEF_USER_EMAIL="@example.com")
-    def test_clean_duplicate_email_no_profile_unicef(self):
-        """Duplicate emails are ok, if user not unicef and not staff member already"""
-        UserFactory(email="test@example.com")
-        form = forms.PartnerStaffMemberForm(self.data)
-        self.assertFalse(form.is_valid())
-        self.assertIn("Unable to associate staff member to UNICEF user", form.errors["__all__"])
 
     def test_clean_email_change(self):
         """Email address may not be changed"""
@@ -124,97 +113,39 @@ class TestPartnerStaffMemberForm(BaseTenantTestCase):
             email="test@example.com",
         )
         form = forms.PartnerStaffMemberForm(self.data, instance=staff)
-        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(form.is_valid())
 
     def test_clean_activate(self):
         """If staff member made active, ensure user not already associated
         with another partner
         """
-        user = UserFactory(email="test@example.com")
+        UserFactory(email="test@example.com")
         partner = PartnerFactory()
         staff = PartnerStaffFactory(
             partner=partner,
             email="test@example.com",
-            active=False,
-            user=user,
+            active=False
         )
-        form = forms.PartnerStaffMemberForm(self.data, instance=staff)
-        self.assertTrue(form.is_valid(), form.errors)
-
-    def test_clean_activate_already_active(self):
-        user = UserFactory(email="test@example.com")
-        partner = PartnerFactory()
-        staff = PartnerStaffFactory(
-            partner=partner,
-            email="test@example.com",
-            active=True,
-            user=user,
-        )
-        self.assertEqual((connection.tenant, staff), user.get_active_partner_staff_member())
         form = forms.PartnerStaffMemberForm(self.data, instance=staff)
         self.assertTrue(form.is_valid())
 
-    @patch('etools.applications.users.models.User.get_active_partner_staff_member')
-    def test_clean_activate_invalid(self, active_staff_mock):
+    def test_clean_activate_invalid(self):
         """If staff member made active, invalid if user already associated
         with another partner
         """
-        active_staff_mock.return_value = (Country(name='fake country', id=-1), PartnerStaffMember(id=-1))
-
-        user = UserFactory(email="test@example.com")
+        profile = ProfileFactory(
+            partner_staff_member=10,
+        )
         partner = PartnerFactory()
         staff = PartnerStaffFactory(
             partner=partner,
-            email="test@example.com",
-            active=False,
-            user=user,
+            email=profile.user.email,
+            active=False
         )
+        self.data["email"] = profile.user.email
         form = forms.PartnerStaffMemberForm(self.data, instance=staff)
         self.assertFalse(form.is_valid())
         self.assertIn(
             "The Partner Staff member you are trying to activate is associated with a different partnership",
             form.errors["active"]
         )
-
-    def test_clean_deactivate(self):
-        user = UserFactory(email="test@example.com")
-        partner = PartnerFactory()
-        self.data['active'] = False
-        staff = PartnerStaffFactory(
-            partner=partner,
-            email="test@example.com",
-            active=True,
-            user=user,
-        )
-        form = forms.PartnerStaffMemberForm(self.data, instance=staff)
-        self.assertTrue(form.is_valid())
-
-    def test_clean_deactivate_prp_synced(self):
-        user = UserFactory(email="test@example.com")
-        partner = PartnerFactory()
-        self.data['active'] = False
-        staff = PartnerStaffFactory(
-            partner=partner,
-            email="test@example.com",
-            active=True,
-            user=user,
-        )
-        InterventionFactory(status=Intervention.SIGNED).partner_focal_points.add(staff)
-        form = forms.PartnerStaffMemberForm(self.data, instance=staff)
-        self.assertFalse(form.is_valid())
-
-    def test_save_user_assigned(self):
-        user = UserFactory(email="test@example.com")
-        user.profile.countries_available.clear()
-
-        form = forms.PartnerStaffMemberForm(self.data)
-        self.assertTrue(form.is_valid())
-        staff_member = form.save()
-        self.assertEqual(staff_member.user, user)
-        self.assertTrue(user.profile.countries_available.filter(id=connection.tenant.id).exists())
-
-    def test_save_user_created(self):
-        form = forms.PartnerStaffMemberForm(self.data)
-        self.assertTrue(form.is_valid())
-        staff_member = form.save()
-        self.assertTrue(staff_member.user.profile.countries_available.filter(id=connection.tenant.id).exists())

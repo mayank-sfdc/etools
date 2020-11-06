@@ -20,12 +20,11 @@ class PartnerStaffFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = models.PartnerStaffMember
 
-    user = factory.SubFactory(UserFactory, groups__data=[], is_staff=False)
     partner = factory.SubFactory('etools.applications.partners.tests.factories.PartnerFactory')
     title = 'Jedi Master'
     first_name = 'Mace'
     last_name = 'Windu'
-    email = factory.SelfAttribute('user.email')
+    email = factory.Sequence(lambda n: "mace{}@example.com".format(n))
 
 
 class PartnerFactory(factory.django.DjangoModelFactory):

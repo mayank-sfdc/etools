@@ -18,8 +18,7 @@ from etools.libraries.pythonlib.collections import HashableDict
 
 PARTNERSHIP_MANAGER_GROUP = "Partnership Manager"
 READ_ONLY_API_GROUP_NAME = 'Read-Only API'
-REPRESENTATIVE_OFFICE_GROUP = 'Representative Office'
-SENIOR_MANAGEMENT_GROUP = 'Senior Management Team'
+SENIOR_MANAGEMENT_GROUP = "Senior Management Team"
 
 
 class PMPPermissions:
@@ -125,15 +124,15 @@ class InterventionPermissions(PMPPermissions):
         def unlocked(instance):
             return not instance.locked
 
-        staff_member = self.user.get_partner_staff_member()
-
+        user_profile = self.user.profile
+        partner_staff_member_id = user_profile.partner_staff_member
         # focal points are prefetched, so just cast to array to collect ids
         partner_focal_points = [fp.id for fp in self.instance.partner_focal_points.all()]
 
-        if staff_member and staff_member.id == self.instance.partner_authorized_officer_signatory_id:
+        if partner_staff_member_id and partner_staff_member_id == self.instance.partner_authorized_officer_signatory_id:
             self.user_groups.extend(['Partner User', 'Partner Signer'])
 
-        if staff_member and staff_member.id in partner_focal_points:
+        if partner_staff_member_id and partner_staff_member_id in partner_focal_points:
             self.user_groups.extend(['Partner User', 'Partner Focal Point'])
 
         self.user_groups = list(set(self.user_groups))
@@ -225,11 +224,12 @@ class PartnershipManagerPermission(permissions.BasePermission):
               - user is 'Partnership Manager' group member OR
               - user is listed as a partner staff member on the object, assuming the object has a partner attribute
         """
-        has_access = user.is_staff or is_user_in_groups(user, [PARTNERSHIP_MANAGER_GROUP])
-        if has_access:
-            return True
+        has_access = user.is_staff or is_user_in_groups(user, ['Partnership Manager'])
 
-        has_access = hasattr(obj, 'partner') and obj.partner.user_is_staff_member(user)
+        has_access = has_access or \
+            (hasattr(obj, 'partner') and
+             user.profile.partner_staff_member in obj.partner.staff_members.values_list('id', flat=True))
+
         return has_access
 
     def has_permission(self, request, view):
@@ -238,9 +238,9 @@ class PartnershipManagerPermission(permissions.BasePermission):
         """
         if request.method in permissions.SAFE_METHODS:
             # Check permissions for read-only request
-            return request.user.is_staff or is_user_in_groups(request.user, [PARTNERSHIP_MANAGER_GROUP])
+            return request.user.is_staff or is_user_in_groups(request.user, ['Partnership Manager'])
         else:
-            return is_user_in_groups(request.user, [PARTNERSHIP_MANAGER_GROUP])
+            return is_user_in_groups(request.user, ['Partnership Manager'])
 
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS:
@@ -249,14 +249,16 @@ class PartnershipManagerPermission(permissions.BasePermission):
         else:
             # Check permissions for write request
             return self._has_access_permissions(request.user, obj) and \
-                is_user_in_groups(request.user, [PARTNERSHIP_MANAGER_GROUP])
+                is_user_in_groups(request.user, ['Partnership Manager'])
 
 
 class PartnershipManagerRepPermission(permissions.BasePermission):
     message = 'Accessing this item is not allowed.'
 
     def _has_access_permissions(self, user, object):
-        if user.is_staff or object.partner.user_is_staff_member(user):
+        if user.is_staff or \
+                user.profile.partner_staff_member in \
+                object.partner.staff_members.values_list('id', flat=True):
             return True
 
     def has_object_permission(self, request, view, obj):
@@ -268,9 +270,9 @@ class PartnershipManagerRepPermission(permissions.BasePermission):
             return self._has_access_permissions(request.user, obj) and is_user_in_groups(
                 request.user,
                 [
-                    PARTNERSHIP_MANAGER_GROUP,
+                    'Partnership Manager',
                     SENIOR_MANAGEMENT_GROUP,
-                    REPRESENTATIVE_OFFICE_GROUP,
+                    'Representative Office'
                 ]
             )
 
@@ -279,7 +281,9 @@ class PartnershipSeniorManagerPermission(permissions.BasePermission):
     message = _('Accessing this item is not allowed.')
 
     def _has_access_permissions(self, user, object):
-        if user.is_staff or object.partner.user_is_staff_member(user):
+        if user.is_staff or \
+                user.profile.partner_staff_member in \
+                object.partner.staff_members.values_list('id', flat=True):
             return True
 
     def has_object_permission(self, request, view, obj):
@@ -290,7 +294,7 @@ class PartnershipSeniorManagerPermission(permissions.BasePermission):
             # Check permissions for write request
             return self._has_access_permissions(request.user, obj) and is_user_in_groups(
                 request.user,
-                [PARTNERSHIP_MANAGER_GROUP, SENIOR_MANAGEMENT_GROUP]
+                ['Partnership Manager', SENIOR_MANAGEMENT_GROUP]
             )
 
 
@@ -371,6 +375,14 @@ def intervention_field_is_editable_permission(field):
     return FieldPermission
 
 
+class IsPartnerUser(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.profile.partner_staff_member
+
+    def has_object_permission(self, request, view, obj):
+        return True
+
+
 def view_action_permission(*actions):
     class ViewActionPermission(BasePermission):
         def has_permission(self, request, view):
@@ -389,12 +401,12 @@ def user_group_permission(*groups):
 
 class UserIsPartnerStaffMemberPermission(BasePermission):
     def has_permission(self, request, view):
-        return request.user.get_partner_staff_member()
+        return hasattr(request.user, 'profile') and bool(request.user.profile.partner_staff_member)
 
 
 class UserIsNotPartnerStaffMemberPermission(BasePermission):
     def has_permission(self, request, view):
-        return not request.user.get_partner_staff_member()
+        return hasattr(request.user, 'profile') and not bool(request.user.profile.partner_staff_member)
 
 
 class UserIsObjectPartnerStaffMember(UserIsPartnerStaffMemberPermission):
@@ -402,7 +414,10 @@ class UserIsObjectPartnerStaffMember(UserIsPartnerStaffMemberPermission):
         if not hasattr(obj, 'partner'):
             return False
 
-        return obj.partner.user_is_staff_member(request.user)
+        if not hasattr(request.user, 'profile'):
+            return False
+
+        return request.user.profile.partner_staff_member in obj.partner.staff_members.values_list('id', flat=True)
 
 
 class UserIsStaffPermission(BasePermission):
@@ -443,15 +458,15 @@ Applies general and object-based permissions.
 """
 PartnershipManagerRefinedPermission = (
     view_action_permission('OPTIONS') |
-    (view_action_permission('GET') & (UserIsStaffPermission | user_group_permission(PARTNERSHIP_MANAGER_GROUP))) |
-    (view_action_permission('POST') & user_group_permission(PARTNERSHIP_MANAGER_GROUP)) |
+    (view_action_permission('GET') & (UserIsStaffPermission | user_group_permission('Partnership Manager'))) |
+    (view_action_permission('POST') & user_group_permission('Partnership Manager')) |
     (
         view_action_permission('GET') &
-        (UserIsStaffPermission | user_group_permission(PARTNERSHIP_MANAGER_GROUP) | UserIsObjectPartnerStaffMember)
+        (UserIsStaffPermission | user_group_permission('Partnership Manager') | UserIsObjectPartnerStaffMember)
     ) |
     (
         view_action_permission('PUT', 'PATCH', 'DELETE') &
-        (user_group_permission(PARTNERSHIP_MANAGER_GROUP) | UserIsObjectPartnerStaffMember)
+        (user_group_permission('Partnership Manager') | UserIsObjectPartnerStaffMember)
     )
 )
 

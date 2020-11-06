@@ -16,7 +16,9 @@ class BasePMPTestCase(BaseTenantTestCase):
         cls.user = UserFactory(is_staff=True)
         cls.partner = PartnerFactory()
         cls.partner_staff = cls.partner.staff_members.all().first()
-        cls.partner_user = cls.partner_staff.user
+        cls.partner_user = UserFactory(email=cls.partner_staff.email)
+        cls.partner_user.profile.partner_staff_member = True
+        cls.partner_user.profile.save()
 
 
 class TestPMPOfficeViews(BasePMPTestCase):

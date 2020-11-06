@@ -718,6 +718,4 @@ class TestPartnerOrganizationDetailSerializer(BaseTenantTestCase):
 
         self.assertEquals(len(data['staff_members']), 1)
         self.assertCountEqual(data['staff_members'][0].keys(), [
-            'active', 'created', 'email', 'first_name', 'id',
-            'last_name', 'modified', 'partner', 'phone', 'title', 'user',
-        ])
+            'active', 'created', 'email', 'first_name', 'id', 'last_name', 'modified', 'partner', 'phone', 'title'])
